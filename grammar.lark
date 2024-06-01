@@ -1,0 +1,40 @@
+
+program: declaration* expression?
+
+?declaration: variable
+
+expression: atom+
+
+?atom: if
+     | array
+     | symbol
+     | symbol_call
+     | quote
+     | splice
+     | NAME
+     | OPERATOR
+     | INT
+     | paren
+
+paren: "(" expression ")"
+
+symbol: ":" SYMBOL
+
+symbol_call: SYMBOL
+
+if: "{" "then" expression "else" expression "}"
+
+quote: "{" expression "}"
+
+splice: "${" expression "}"
+
+variable: NAME "::" expression "::"
+
+array: "[" atom* "]"
+
+NAME: /[A-Z][a-zA-Z0-9]*/
+SYMBOL: /[a-z][a-zA-Z0-9]*/
+OPERATOR: /[+\-*\/!@#$%&~;,.|?<>=_](?![{A-Z])[+\-*\/!@#$%&~;,.|?<>=_]*/
+INT: /-?\d+/
+
+%ignore /\s+/
