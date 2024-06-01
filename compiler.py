@@ -1,6 +1,8 @@
 from _parser import parser
 from lark import Token, Tree
 
+needed_symbols = {}
+
 unique_val = -1
 def unique():
     global unique_val
@@ -31,7 +33,7 @@ def compile_name(code, value, **kwargs):
     cur_func = kwargs["cur_func"]
     final = kwargs["final"]
     if final and "_var_" + value == cur_func:
-        code += f"    return 1;"
+        code += f"    return 1;\n"
         return code
     if cur_func == "main":
         code += f"    trampoline(_var_{value}, &_stack);\n"
@@ -67,14 +69,22 @@ def compile_operator(code, value, **kwargs):
         code += f"    concatOperation({amper}_stack);\n"
     elif value == ".":
         code += f"    duplicateOperation({amper}_stack);\n"
+    elif value == "<->":
+        code += f"    flipOperation({amper}_stack);\n"
     elif value == ",":
         u = unique()
         code += f"    Data popped{u} = pop({amper}_stack);\n"
         code += f"    freeData(&popped{u});\n"
     elif value == "<$>":
         code += f"    mapOperation({amper}_stack);\n"
+    elif value == "<*":
+        code += f"    headOperation({amper}_stack);\n"
+    elif value == "*>>":
+        code += f"    tailOperation({amper}_stack);\n"
+    elif value == "#":
+        code += f"    lengthOperation({amper}_stack);\n"
     else:
-        assert False, f"Unrecognized operator: {value}"
+        assert False, f"Unrecognized operator: '{value}'"
     final = kwargs["final"]
     if final:
         code += "    return 0;\n"
@@ -84,12 +94,13 @@ def compile_array(code, *values, **kwargs):
     cur_func = kwargs["cur_func"]
     code += "    // push array\n"
     for val in reversed(values):
+        kwargs["paren"] = True
         code = compile_tree(code, val, **(kwargs.copy()))
     if cur_func == "main":
         code += f"    pushArray(&_stack, {len(values)});\n"
     else:
         code += f"    pushArray(_stack, {len(values)});\n"
-    if kwargs["final"]:
+    if not kwargs["paren"] and kwargs["final"]:
         code += "    return 0;\n"
     return code
 
@@ -97,38 +108,57 @@ def compile_symbol(code, name, **kwargs):
     cur_func = kwargs["cur_func"]
     amper = "&" if cur_func == "main" else ""
     code += f"    // symbol\n"
-    code += f"    Data _var_{name} = pop({amper}_stack);\n"
-    if kwargs["final"]:
+    code += f"    Data _var_{name} = pop({amper}_stack);"
+    if not kwargs["paren"] and kwargs["final"]:
         code += "    return 0;\n"
     return code
 
 def compile_symbol_call(code, name, **kwargs):
     cur_func = kwargs["cur_func"]
     amper = "&" if cur_func == "main" else ""
+    if not needed_symbols.get(kwargs["cur_func"], []):
+        needed_symbols[kwargs["cur_func"]] = []
+    needed_symbols.get(kwargs["cur_func"], []).append(f"_var_{name}")
     code += f"    // symbol call\n"
     code += f"    push({amper}_stack, _var_{name});\n"
-    if kwargs["final"]:
+    if not kwargs["paren"] and kwargs["final"]:
         code += "    return 0;\n"
     return code
 
 def compile_quote(code, expr, **kwargs):
     cur_func = kwargs["cur_func"]
     u = unique()
-    code = code.split("// start\n")
-    func = f"int quote{u}(Stack *_stack) {{\n"
+    code = code.split("// start\n", 1)
+    func = "// start\n"
+    func += f"int quote{u}(Stack *_stack, Data *needed) {{\n"
     kwargs["cur_func"] = f"quote{u}"
     func = compile_tree(func, expr, **(kwargs.copy()))
     func += f"}}\n"
-    func += "// start\n"
     code.insert(1, func)
     code = "\n".join(code)
     code += f"    // quoting\n"
     code += f"    Data funcData{u} = createFunction();\n"
-    code += f"    funcData{u}.funcValue = quote{u};\n"
-    if cur_func:
+    needed = needed_symbols.get(kwargs["cur_func"], [])
+    code += f"    Data *needed{u} = malloc({len(needed)} * sizeof(Data));\n"
+    for i, need in enumerate(needed):
+        code += f"    needed{u}[{i}] = {need};\n"
+    code += f"    funcData{u}.quoteValue.needed = needed{u};\n"
+    code += f"    funcData{u}.quoteValue.funcValue = quote{u};\n"
+    if cur_func == "main":
         code += f"    push(&_stack, funcData{u});\n"
     else:
         code += f"    push(_stack, funcData{u});\n"
+    if not kwargs["paren"] and kwargs["final"]:
+        code += "    return 0;\n"
+    code = code.split(f"int quote{u}(Stack *_stack, Data *needed) {{\n")
+    unpack = ""
+    for i, need in enumerate(needed):
+        unpack += f"    Data {need} = needed[{i}];\n"
+    code[1] = unpack + code[1]
+    code = f"int quote{u}(Stack *_stack, Data *needed) {{\n".join(code)
+    if not needed_symbols.get(cur_func):
+        needed_symbols[cur_func] = []
+    needed_symbols[cur_func].append(needed_symbols.get(f"quote{u}", []))
     return code
 
 def compile_splice(code, expr, **kwargs):
@@ -137,42 +167,35 @@ def compile_splice(code, expr, **kwargs):
     u = unique()
     code += f"    // splicing\n"
     kwargs["paren"] = True
-    expr = compile_tree("", expr, **(kwargs.copy()))
-    expr = remove_returns(expr)
-    code += expr
+    code = compile_tree(code, expr, **(kwargs.copy()))
     code += f"    Data funcData{u} = pop({amper}_stack);\n"
     code += f"    if (funcData{u}.type == TYPE_FUNC) {{\n"
-    code += f"        funcData{u}.funcValue({amper}_stack);\n"
+    code += f"        funcData{u}.quoteValue.funcValue({amper}_stack, funcData{u}.quoteValue.needed);\n"
     code += f"    }}\n"
     return code
     
 def compile_variable(code, name, expr, **kwargs):
-    code = code.split("// start\n")
-    func = f"int _var_{name}(Stack *_stack) {{\n"
+    code = code.split("// start\n", 1)
+    func = "// start\n"
+    func += f"int _var_{name}(Stack *_stack) {{\n"
     kwargs["cur_func"] = f"_var_{name}"
-    func = compile_tree(func, expr, **(kwargs.copy()))
+    func = compile_expression(func, expr, **(kwargs.copy()))
     func += f"}}\n"
-    func += "// start\n"
     code.insert(1, func)
     code = "\n".join(code)
     return code
 
 def compile_if(code, true, false, **kwargs):
     cur_func = kwargs["cur_func"]
-    kwargs["final"] = False
     u = unique()
     amper = "&" if cur_func == "main" else ""
     code += f"    Data condition{u} = pop({amper}_stack);\n"
     code += f"    if (condition{u}.type == TYPE_INT && !condition{u}.intValue) {{\n"
     code += f"        freeData(&condition{u});\n"
-    true = compile_tree("", true, **(kwargs.copy()))
-    true = "\n".join(["    " + l for l in true.splitlines()]) + "\n"
-    false = compile_tree("", false, **(kwargs.copy()))
-    false = "\n".join(["    " + l for l in false.splitlines()]) + "\n"
-    code += false
+    code = compile_tree(code, false, **(kwargs.copy()))
     code += f"    }} else {{\n"
     code += f"        freeData(&condition{u});\n"
-    code += true
+    code = compile_tree(code, true, **(kwargs.copy()))
     code += f"    }}\n"
     return code
 
@@ -181,18 +204,20 @@ def compile_paren(code, expr, **kwargs):
     return compile_expression(code, expr, **(kwargs.copy()))
 
 def compile_expression(code, *atoms, **kwargs):
+    kwargs["final"] = False
     paren = kwargs.get("paren", False)
     for i, at in enumerate(atoms):
         if i == len(atoms) - 1 and not paren:
             kwargs["final"] = True
         code = compile_tree(code, at, **(kwargs.copy()))
-    if not paren:
-        kwargs["final"] = False
     return code
 
 def compile_program(code, *decls, **kwargs):
-    for dec in decls:
-        code = compile_tree(code, dec, **(kwargs.copy()))
+    for dec in reversed(decls):
+        if dec.data != "expression":
+            code = compile_tree(code, dec, **(kwargs.copy()))
+    if decls[-1].data == "expression":
+        code = compile_tree(code, decls[-1], **kwargs)
     return code
 
 def compile_tree(code, tree, **kwargs):
@@ -218,7 +243,7 @@ def compile_tree(code, tree, **kwargs):
         if tree.data == "if":
             return compile_if(code, *tree.children, **(kwargs.copy()))
         if tree.data == "paren":
-            return compile_paren(code, *tree.children, **kwargs)        
+            return compile_paren(code, *tree.children, **(kwargs.copy()))        
         if tree.data == "expression":
             return compile_expression(code, *tree.children, **(kwargs.copy()))
         if tree.data == "variable":
@@ -230,6 +255,7 @@ def compile_tree(code, tree, **kwargs):
 def compile_source_code(source_code):
     tree = parser.parse(source_code)
     code = "#include <stdio.h>\n"
+    code += "#include <stdlib.h>\n"
     code += "#include \"lib.h\"\n"
     code += "#include \"tostring.h\"\n"
     code += "#include \"operations.h\"\n\n"
@@ -237,7 +263,7 @@ def compile_source_code(source_code):
     code += "int main() {\n"
     code += "    Stack _stack;\n"
     code += "    initStack(&_stack);\n"
-    code = compile_tree(code, tree, cur_func="main", final=False)
+    code = compile_tree(code, tree, cur_func="main", final=False, paren=False)
     if code.rstrip().endswith("    return 0;"):
         code = code[:-14]
     code += "    freeStack(&_stack);\n"

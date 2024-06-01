@@ -12,12 +12,13 @@ void initStack(Stack *stack) {
 }
 
 void push(Stack *stack, Data item) {
-    if (stack->top == stack->capacity) {
+    if (stack->top >= stack->capacity) {
         stack->capacity *= 2;
-        stack->items = realloc(stack->items, stack->capacity * sizeof(Data));
-        if (!stack->items) {
+        Data *newItems = realloc(stack->items, stack->capacity * sizeof(Data));
+        if (!newItems) {
             exit(1);
         }
+        stack->items = newItems;
     }
     stack->items[stack->top++] = item;
 }
@@ -38,23 +39,25 @@ Array *createArray(size_t length) {
 }
 
 void destroyArray(Array *array) {
+    for (size_t i = 0; i < array->length; i++) {
+        freeData(&array->elements[i]);
+    }
     free(array->elements);
     free(array);
 }
 
+
 void freeStack(Stack *stack) {
     for (size_t i = 0; i < stack->top; i++) {
-        Data data = pop(stack);
-        if (data.type == TYPE_ARRAY) {
-            free(data.arrayValue->elements);
-        }
+        freeData(&stack->items[i]);
     }
     free(stack->items);
+    stack->items = NULL;
 }
 
 void freeData(Data *data) {
     if (data->type == TYPE_ARRAY) {
-        free(data->arrayValue->elements);
+        destroyArray(data->arrayValue);
     }
 }
 

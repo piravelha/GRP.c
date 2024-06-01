@@ -178,6 +178,14 @@ int duplicateOperation(Stack *stack) {
     return 0;
 }
 
+int flipOperation(Stack *stack) {
+    Data right = pop(stack);
+    Data left = pop(stack);
+    push(stack, right);
+    push(stack, left);
+    return 0;
+}
+
 int mapOperation(Stack *stack) {
     Data func = pop(stack);
     Data arr = pop(stack);
@@ -190,7 +198,7 @@ int mapOperation(Stack *stack) {
         for (size_t i = 0; i < length; i++) {
             Data elem = arr.arrayValue->elements[i];
             push(stack, elem);
-            func.funcValue(stack);
+            func.quoteValue.funcValue(stack, func.quoteValue.needed);
             Data newElem = pop(stack);
             dataArray.arrayValue->elements[i] = newElem;
         }
@@ -207,6 +215,33 @@ int mapOperation(Stack *stack) {
     }
 }
 
+
+Array *deepCopyArray(Array *array) {
+    if (array == NULL) return NULL;
+
+    Array *copy = createArray(array->length);
+    for (size_t i = 0; i < array->length; i++) {
+        Data *srcElem = &array->elements[i];
+        Data *destElem = &copy->elements[i];
+
+        destElem->type = srcElem->type;
+        switch (srcElem->type) {
+            case TYPE_INT:
+                destElem->intValue = srcElem->intValue;
+                break;
+            case TYPE_ARRAY:
+                destElem->arrayValue = deepCopyArray(srcElem->arrayValue);
+                break;
+            // Handle other types as needed
+            default:
+                break;
+        }
+    }
+    return copy;
+}
+
+
+
 int concatOperation(Stack *stack) {
     Data rightArr = pop(stack);
     Data leftArr = pop(stack);
@@ -220,12 +255,30 @@ int concatOperation(Stack *stack) {
 
         for (size_t i = 0; i < leftLength; i++) {
             Data elem = leftArr.arrayValue->elements[i];
-            dataArray.arrayValue->elements[i] = elem;
+            char *elemRepr = dataToString(&elem);
+            if (elem.type == TYPE_ARRAY) {
+                Array *elemArr = deepCopyArray(elem.arrayValue);
+                Data elemData;
+                elemData.type = TYPE_ARRAY;
+                elemData.arrayValue = elemArr;
+                dataArray.arrayValue->elements[i] = elemData;
+            } else {
+                dataArray.arrayValue->elements[i] = elem;
+            }
         }
 
         for (size_t i = 0; i < rightLength; i++) {
             Data elem = rightArr.arrayValue->elements[i];
-            dataArray.arrayValue->elements[leftLength + i] = elem;
+            char *elemRepr = dataToString(&elem);
+            if (elem.type == TYPE_ARRAY) {
+                Array *elemArr = deepCopyArray(elem.arrayValue);
+                Data elemData;
+                elemData.type = TYPE_ARRAY;
+                elemData.arrayValue = elemArr;
+                dataArray.arrayValue->elements[leftLength + i] = elemData;
+            } else {
+                dataArray.arrayValue->elements[leftLength + i] = elem;
+            }
         }
 
         push(stack, dataArray);
@@ -240,6 +293,76 @@ int concatOperation(Stack *stack) {
         free(leftRepr);
         free(rightRepr);
         freeStack(stack);
+        exit(1);
+    }
+}
+
+int headOperation(Stack *stack) {
+    Data arr = pop(stack);
+    if (arr.type == TYPE_ARRAY) {
+        size_t length = arr.arrayValue->length;
+        if (length < 1) {
+            printf("Attempting to extract the head of an empty list\n");
+            freeStack(stack);
+            freeData(&arr);
+            exit(1);
+        }
+        Data head = arr.arrayValue->elements[0];
+        push(stack, head);
+        return 0;
+    } else {
+        char *arrRepr = dataToString(&arr);
+        printf("Attempting to extract the head of a non-list value: '%s'", arrRepr);
+        freeStack(stack);
+        freeData(&arr);
+        free(arrRepr);
+        exit(1);
+    }
+}
+
+int tailOperation(Stack *stack) {
+    Data arr = pop(stack);
+    if (arr.type == TYPE_ARRAY) {
+        size_t length = arr.arrayValue->length;
+        if (length < 1) {
+            printf("Attempting to extract the tail of an empty list\n");
+            freeStack(stack);
+            freeData(&arr);
+            exit(1);
+        }
+        Array *tail = createArray(length - 1);
+        Data tailData;
+        tailData.type = TYPE_ARRAY;
+        tailData.arrayValue = tail;
+        
+        for (size_t i = 1; i < length; i++) {
+            tailData.arrayValue->elements[i - 1] = arr.arrayValue->elements[i];
+        }
+
+        push(stack, tailData);
+        return 0;
+    } else {
+        char *arrRepr = dataToString(&arr);
+        printf("Attempting to extract the head of a non-list value: '%s'", arrRepr);
+        freeStack(stack);
+        freeData(&arr);
+        free(arrRepr);
+        exit(1);
+    }
+}
+
+int lengthOperation(Stack *stack) {
+    Data arr = pop(stack);
+    if (arr.type == TYPE_ARRAY) {
+        size_t length = arr.arrayValue->length;
+        pushInt(stack, (int)length);
+        return 0;
+    } else {
+        char *arrRepr = dataToString(&arr);
+        printf("Attempting to get length of a non-array value: '%s'", arrRepr);
+        freeStack(stack);
+        free(arrRepr);
+        freeData(&arr);
         exit(1);
     }
 }

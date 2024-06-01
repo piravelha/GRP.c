@@ -4,6 +4,7 @@
 #include <stddef.h>
 
 struct Array;
+struct AST;
 
 typedef enum {
     TYPE_INT,
@@ -12,13 +13,16 @@ typedef enum {
     TYPE_FUNC
 } DataType;
 
-typedef struct {
+typedef struct Data {
     DataType type;
     union {
         int intValue;
         char charValue;
         struct Array *arrayValue;
-        int (*funcValue)();
+        struct {
+            struct Data *needed;
+            int (*funcValue)();
+        } quoteValue;
     };
 } Data;
 
