@@ -1,4 +1,2 @@
 
-34 35 + <? ; 69
-;     ^  ^
-;  plus  print
+[1 2 3] ? " is my favorite array!" ++ <?

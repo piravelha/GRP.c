@@ -1,0 +1,17 @@
+
+Iota (.=) :: :acc :n {
+    if n 0 <= then acc
+    else n 1 - acc [n] ++ Iota
+} ::
+
+Sum (<+>) ::
+    {+} <.>
+::
+
+Product (<*>) ::
+    {*} <.>
+::
+
+Factorial (!) ::
+    .= <*>
+::

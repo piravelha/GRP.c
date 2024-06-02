@@ -25,7 +25,35 @@ def compile_int(code, value, **kwargs):
     else:
         code += f"    pushInt(_stack, {value});\n"
     final = kwargs["final"]
-    if final:
+    if final and not kwargs["paren"]:
+        code += "    return 0;\n"
+    return code
+
+def compile_char(code, value, **kwargs):
+    cur_func = kwargs["cur_func"]
+    code += f"    // push '{value}'\n"
+    if cur_func == "main":
+        code += f"    pushChar(&_stack, '{value}');\n"
+    else:
+        code += f"    pushChar(_stack, '{value}');\n"
+    final = kwargs["final"]
+    if final and not kwargs["paren"]:
+        code += "    return 0;\n"
+    return code
+
+def compile_string(code, value, **kwargs):
+    chars = [Token("CHAR", c) for c in value[1:-1]]
+    return compile_array(code, *chars, **(kwargs.copy()))
+
+def compile_float(code, value, **kwargs):
+    cur_func = kwargs["cur_func"]
+    code += f"    // push {value}\n"
+    if cur_func == "main":
+        code += f"    pushFloat(&_stack, {value});\n"
+    else:
+        code += f"    pushFloat(_stack, {value});\n"
+    final = kwargs["final"]
+    if final and not kwargs["paren"]:
         code += "    return 0;\n"
     return code
 
@@ -41,48 +69,53 @@ def compile_name(code, value, **kwargs):
         code += f"    trampoline(_var_{value}, _stack);\n"
     return code
 
+
+operator_lookup = {
+    "<?": "_var_Print",
+    "?": "_var_Show",
+    "+": "_var_Plus",
+    "^+": "_var_Conjuage",
+    "-": "_var_Minus",
+    "^-": "_var_Negate",
+    "*": "_var_Times",
+    "^*": "_var_Signum",
+    "/": "_var_Div",
+    "^/": "_var_Reciprocal",
+    "%": "_var_Mod",
+    "**": "_var_Power",
+    "^**": "_var_Exp",
+    "^//": "_var_Sqrt",
+    "//": "_var_Root",
+    "-|": "_var_Floor",
+    "+|": "_var_Ceil",
+    "=-=": "_var_Min",
+    "=+=": "_var_Max",
+    "|^|": "_var_Abs",
+    "===": "_var_Depth",
+    "<": "_var_Lt",
+    ">": "_var_Gt",
+    "<=": "_var_Lte",
+    ">=": "_var_Gte",
+    "=": "_var_Eq",
+    "++": "_var_Concat",
+    ".": "_var_Dup",
+    "<->": "_var_Flip",
+    "<$>": "_var_Map",
+    "<&>": "_var_Filter",
+    "<.>": "_var_Reduce",
+    "<*": "_var_Head",
+    "*>>": "_var_Tail",
+    "#": "_var_Length",
+    ":>": "_var_Cons",
+}
+
 def compile_operator(code, value, **kwargs):
     cur_func = kwargs["cur_func"]
     code += f"    // operator {value}\n"
     amper = "&" if cur_func == "main" else ""
-    if value == "<?":
-        code += f"    printData(pop({amper}_stack));\n"
-    elif value == "+":
-        code += f"    plusOperation({amper}_stack);\n"
-    elif value == "-":
-        code += f"    minusOperation({amper}_stack);\n"
-    elif value == "*":
-        code += f"    timesOperation({amper}_stack);\n"
-    elif value == "/":
-        code += f"    divOperation({amper}_stack);\n"
-    elif value == "=":
-        code += f"    eqOperation({amper}_stack);\n"
-    elif value == "<":
-        code += f"    ltOperation({amper}_stack);\n"
-    elif value == ">":
-        code += f"    gtOperation({amper}_stack);\n"
-    elif value == "<=":
-        code += f"    lteOperation({amper}_stack);\n"
-    elif value == ">=":
-        code += f"    gteOperation({amper}_stack);\n"
-    elif value == "++":
-        code += f"    concatOperation({amper}_stack);\n"
-    elif value == ".":
-        code += f"    duplicateOperation({amper}_stack);\n"
-    elif value == "<->":
-        code += f"    flipOperation({amper}_stack);\n"
-    elif value == ",":
-        u = unique()
-        code += f"    Data popped{u} = pop({amper}_stack);\n"
-        code += f"    freeData(&popped{u});\n"
-    elif value == "<$>":
-        code += f"    mapOperation({amper}_stack);\n"
-    elif value == "<*":
-        code += f"    headOperation({amper}_stack);\n"
-    elif value == "*>>":
-        code += f"    tailOperation({amper}_stack);\n"
-    elif value == "#":
-        code += f"    lengthOperation({amper}_stack);\n"
+    
+    if value in operator_lookup:
+        code += f"    trampoline({operator_lookup[value]}, {amper}_stack);\n"
     else:
         assert False, f"Unrecognized operator: '{value}'"
     final = kwargs["final"]
@@ -108,7 +141,7 @@ def compile_symbol(code, name, **kwargs):
     cur_func = kwargs["cur_func"]
     amper = "&" if cur_func == "main" else ""
     code += f"    // symbol\n"
-    code += f"    Data _var_{name} = pop({amper}_stack);"
+    code += f"    Data _var_{name} = pop({amper}_stack);\n"
     if not kwargs["paren"] and kwargs["final"]:
         code += "    return 0;\n"
     return code
@@ -158,7 +191,7 @@ def compile_quote(code, expr, **kwargs):
     code = f"int quote{u}(Stack *_stack, Data *needed) {{\n".join(code)
     if not needed_symbols.get(cur_func):
         needed_symbols[cur_func] = []
-    needed_symbols[cur_func].append(needed_symbols.get(f"quote{u}", []))
+    needed_symbols[cur_func] += needed_symbols.get(f"quote{u}", [])
     return code
 
 def compile_splice(code, expr, **kwargs):
@@ -174,29 +207,46 @@ def compile_splice(code, expr, **kwargs):
     code += f"    }}\n"
     return code
     
-def compile_variable(code, name, expr, **kwargs):
+def compile_variable(code, *args, **kwargs):
+    if len(args) == 3:
+        name, _, expr = args
+    else:
+        name, expr = args
+    old_cur_func = kwargs["cur_func"]
     code = code.split("// start\n", 1)
     func = "// start\n"
     func += f"int _var_{name}(Stack *_stack) {{\n"
     kwargs["cur_func"] = f"_var_{name}"
     func = compile_expression(func, expr, **(kwargs.copy()))
     func += f"}}\n"
+    func = func.replace("// start\n", "") + "\n// start\n"
     code.insert(1, func)
     code = "\n".join(code)
+    code = code.split("// top\n", 1)
+    code.insert(1, f"// top\nint _var_{name}(Stack *_stack);\n")
+    code = "\n".join(code)
+    kwargs["cur_func"] = old_cur_func
     return code
 
-def compile_if(code, true, false, **kwargs):
+def compile_if(code, *conditions, **kwargs):
     cur_func = kwargs["cur_func"]
     u = unique()
     amper = "&" if cur_func == "main" else ""
-    code += f"    Data condition{u} = pop({amper}_stack);\n"
-    code += f"    if (condition{u}.type == TYPE_INT && !condition{u}.intValue) {{\n"
-    code += f"        freeData(&condition{u});\n"
-    code = compile_tree(code, false, **(kwargs.copy()))
-    code += f"    }} else {{\n"
-    code += f"        freeData(&condition{u});\n"
+    for tree in conditions[:-1]:
+        cond, then = tree.children
+        cond_u = unique()
+        old_paren = kwargs["paren"]
+        kwargs["paren"] = True
+        code = compile_tree(code, cond, **(kwargs.copy()))
+        code += f"    Data condition{cond_u} = pop({amper}_stack);\n"
+        code += f"    if (!condition{cond_u}.type == TYPE_INT || condition{cond_u}.intValue) {{\n"
+        code += f"        freeData(&condition{cond_u});\n"
+        kwargs["paren"] = old_paren
+        code = compile_tree(code, then, **(kwargs.copy()))
+        code += f"    }} else {{\n"
+    true = conditions[-1]
     code = compile_tree(code, true, **(kwargs.copy()))
-    code += f"    }}\n"
+    code += f"    }}\n" * round((len(conditions)) / 2)
     return code
 
 def compile_paren(code, expr, **kwargs):
@@ -212,18 +262,34 @@ def compile_expression(code, *atoms, **kwargs):
         code = compile_tree(code, at, **(kwargs.copy()))
     return code
 
+def save_operator(dec):
+    global operator_lookup
+    children = dec.children
+    if len(children) == 3:
+        name, op, *_ = children
+        operator_lookup[op] = f"_var_{name}"
+
 def compile_program(code, *decls, **kwargs):
-    for dec in reversed(decls):
+    if not len(decls):
+        return code
+    [save_operator(dec) for dec in decls if dec.data == "variable"]
+    for dec in decls:
         if dec.data != "expression":
             code = compile_tree(code, dec, **(kwargs.copy()))
     if decls[-1].data == "expression":
-        code = compile_tree(code, decls[-1], **kwargs)
+        code = compile_tree(code, decls[-1], **(kwargs.copy()))
     return code
 
 def compile_tree(code, tree, **kwargs):
     if isinstance(tree, Token):
         if tree.type == "INT":
             return compile_int(code, tree.value, **(kwargs.copy()))
+        if tree.type == "CHAR":
+            return compile_char(code, tree.value, **(kwargs.copy()))
+        if tree.type == "STRING":
+            return compile_string(code, tree.value, **(kwargs.copy()))
+        if tree.type == "FLOAT":
+            return compile_float(code, tree.value, **(kwargs.copy()))
         if tree.type == "NAME":
             return compile_name(code, tree.value, **(kwargs.copy()))
         if tree.type == "OPERATOR":
@@ -259,6 +325,7 @@ def compile_source_code(source_code):
     code += "#include \"lib.h\"\n"
     code += "#include \"tostring.h\"\n"
     code += "#include \"operations.h\"\n\n"
+    code += "// top\n"
     code += "// start\n"
     code += "int main() {\n"
     code += "    Stack _stack;\n"
@@ -273,7 +340,10 @@ def compile_source_code(source_code):
 with open("main.grp") as f:
     source_code = f.read()
 
-compiled = compile_source_code(source_code)
+with open("Core.grp") as f:
+    core_code = f.read()
+
+compiled = compile_source_code(core_code + "\n\n" + source_code)
 
 with open("main.c", "w") as f:
     f.write(compiled)

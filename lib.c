@@ -66,6 +66,20 @@ void pushInt(Stack *stack, int item) {
     push(stack, data);
 }
 
+void pushChar(Stack *stack, char item) {
+    Data data;
+    data.type = TYPE_CHAR;
+    data.charValue = item;
+    push(stack, data);
+}
+
+void pushFloat(Stack *stack, double item) {
+    Data data;
+    data.type = TYPE_FLOAT;
+    data.floatValue = item;
+    push(stack, data);
+}
+
 void pushArray(Stack *stack, size_t length) {
     Array *array = createArray(length);
 

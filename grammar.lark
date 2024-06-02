@@ -14,28 +14,36 @@ expression: atom+
      | NAME
      | OPERATOR
      | INT
+     | STRING
+     | CHAR
+     | FLOAT
      | paren
 
 paren: "(" expression ")"
+
+if: "{" if_case* "else" expression "}"
+
+if_case: "if" expression "then" expression
 
 symbol: ":" SYMBOL
 
 symbol_call: SYMBOL
 
-if: "{" "then" expression "else" expression "}"
-
 quote: "{" expression "}"
 
 splice: "${" expression "}"
 
-variable: NAME "::" expression "::"
+variable: NAME ("(" OPERATOR ")")? "::" expression "::"
 
 array: "[" atom* "]"
 
 NAME: /[A-Z][a-zA-Z0-9]*/
-SYMBOL: /[a-z][a-zA-Z0-9]*/
-OPERATOR: /[+\-*\/!@#$%&~,.|?<>=_](?![{A-Z])[+\-*\/!@#$%&~,.|?<>=_]*/
+SYMBOL: /(?!if|then|else)[a-z][a-zA-Z0-9]*/
+OPERATOR: /(?!::)[+\-*\/^!@#$%&~,.:|?<>=_](?![{a-zA-Z0-9])[+\-*\/^!@#$%&~,.:|?<>=_]*/
 INT: /-?\d+/
+FLOAT: /-?\d+\.\d+/
+STRING: /"[^"]*"/
+CHAR: /'[^']'/
 
 %ignore /\s+/
 %ignore /;.*/

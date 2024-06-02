@@ -8,6 +8,7 @@ struct AST;
 
 typedef enum {
     TYPE_INT,
+    TYPE_FLOAT,
     TYPE_CHAR,
     TYPE_ARRAY,
     TYPE_FUNC
@@ -18,6 +19,7 @@ typedef struct Data {
     union {
         int intValue;
         char charValue;
+        double floatValue;
         struct Array *arrayValue;
         struct {
             struct Data *needed;
@@ -45,6 +47,8 @@ void destroyArray(Array *array);
 void freeStack(Stack *stack);
 void freeData(Data *data);
 void pushInt(Stack *stack, int item);
+void pushChar(Stack *stack, char item);
+void pushFloat(Stack *stack, double item);
 void pushArray(Stack *stack, size_t length);
 Data createFunction(void);
 void trampoline(int (*func)(Stack *), Stack *stack);
