@@ -1,6 +1,6 @@
 # GRP */grape/*
 
-![grp-logo](https://github.com/piravelha/GRP.c/assets/140568241/15d5b3c1-e387-4f4d-a594-6fe2eee53f67)
+<img width=200 height=200 src=https://github.com/piravelha/GRP.c/assets/140568241/15d5b3c1-e387-4f4d-a594-6fe2eee53f67>
 
 This is an alternative implementation of GRP, that compiles to C.
 
